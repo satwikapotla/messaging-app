@@ -30,46 +30,49 @@ def remove_client(client_socket):
         print(f"[-] {username} has disconnected.")
         broadcast(f"{username} has left the chat.".encode('utf-8'), client_socket)
 
-# This function handles a single client's connection
 def handle_client(client_socket):
     try:
-        client_socket.send("USER".encode('utf-8'))
-        username = client_socket.recv(1024).decode('utf-8')
+        # --- MODIFIED: USERNAME HANDLING LOOP ---
+        while True:
+            client_socket.send("USER".encode('utf-8'))
+            username = client_socket.recv(1024).decode('utf-8')
+            if username not in usernames:
+                client_socket.send("OK".encode('utf-8')) # Signal that the username is accepted
+                break
+            else:
+                client_socket.send("TAKEN".encode('utf-8')) # Signal that the username is taken
+        
         usernames.append(username)
         clients.append(client_socket)
         
         print(f"[+] {username} has connected.")
         broadcast(f"{username} has joined the chat!".encode('utf-8'), client_socket)
-        client_socket.send("Connected to the server!".encode('utf-8'))
+        client_socket.send("Connected to the server! Type /list to see online users.".encode('utf-8'))
 
         while True:
             message_str = client_socket.recv(1024).decode('utf-8')
             if message_str:
-                # --- NEW WHISPER LOGIC ---
-                if message_str.startswith('/whisper'):
+                if message_str.lower() == '/list':
+                    # --- NEW: /list COMMAND LOGIC ---
+                    online_users = ", ".join(usernames)
+                    list_message = f"Online users: {online_users}".encode('utf-8')
+                    client_socket.send(list_message)
+                elif message_str.startswith('/whisper'):
+                    # (Whisper logic remains the same)
                     try:
-                        # Format: /whisper <recipient> <message>
                         parts = message_str.split(' ', 2)
-                        recipient_username = parts[1]
-                        private_message = parts[2]
-
-                        # Find the recipient's socket
+                        recipient_username, private_message = parts[1], parts[2]
                         if recipient_username in usernames:
                             recipient_index = usernames.index(recipient_username)
                             recipient_socket = clients[recipient_index]
-                            
-                            # Send the private message
                             final_message = f"(whisper from {username}): {private_message}".encode('utf-8')
                             recipient_socket.send(final_message)
-                            
-                            # Send confirmation to the sender
                             client_socket.send(f"You whispered to {recipient_username}: {private_message}".encode('utf-8'))
                         else:
                             client_socket.send(f"Error: User '{recipient_username}' not found.".encode('utf-8'))
                     except IndexError:
-                        client_socket.send("Error: Invalid whisper format. Use /whisper <username> <message>".encode('utf-8'))
+                        client_socket.send("Error: Invalid whisper format.".encode('utf-8'))
                 else:
-                    # It's a regular broadcast message
                     broadcast(f"<{username}> {message_str}".encode('utf-8'), client_socket)
             else:
                 remove_client(client_socket)
@@ -77,7 +80,6 @@ def handle_client(client_socket):
     except:
         remove_client(client_socket)
 
-# --- Main Server Loop ---
 while True:
     client_socket, address = server_socket.accept()
     thread = threading.Thread(target=handle_client, args=(client_socket,))

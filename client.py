@@ -1,34 +1,43 @@
 # client.py
 import socket
 import threading
-import os # We need the 'os' library to properly exit the program
+import os
 
-# This function will run in a thread to continuously receive messages
-def receive_messages(client_socket):
+def receive_messages(client_socket, username_accepted_event):
     while True:
         try:
             message = client_socket.recv(1024).decode('utf-8')
             if message == "USER":
-                username = input("Please choose your username: ")
-                client_socket.send(username.encode('utf-8'))
+                while True:
+                    username = input("Please choose your username: ")
+                    client_socket.send(username.encode('utf-8'))
+                    response = client_socket.recv(1024).decode('utf-8')
+                    if response == "OK":
+                        # CHANGE 1: The light turns green. Username is set, so we can proceed.
+                        username_accepted_event.set()
+                        break
+                    else: # Response was "TAKEN"
+                        print("Username is already taken. Please choose another.")
             elif message:
                 print(message)
             else:
-                # Server has closed the connection
                 print("Server disconnected. Shutting down.")
                 os._exit(0)
         except:
-            print("An error occurred. Disconnecting from server.")
+            print("An error occurred. Disconnecting.")
             os._exit(0)
 
-# This function now handles the /quit command
-def send_messages(client_socket):
+def send_messages(client_socket, username_accepted_event):
+    # CHANGE 2: Wait for the green light before starting the message loop.
+    username_accepted_event.wait() 
+    
+    print("You can now start sending messages!")
     while True:
-        message = input('') # Wait for the user to type something
+        message = input('')
         if message.lower() == '/quit':
             print("Disconnecting from server.")
             client_socket.close()
-            os._exit(0) # Forcefully stops all threads and exits
+            os._exit(0)
         client_socket.send(message.encode('utf-8'))
 
 # --- Main Client Logic ---
@@ -39,7 +48,12 @@ except ConnectionRefusedError:
     print("[!] Connection failed. Is the server running?")
     exit()
 
-receive_thread = threading.Thread(target=receive_messages, args=(client_socket,))
+# CHANGE 3: Create the "traffic light" event. It starts as red.
+username_accepted = threading.Event()
+
+receive_thread = threading.Thread(target=receive_messages, args=(client_socket, username_accepted))
 receive_thread.start()
 
-send_messages(client_socket)
+# We can now start the send_messages in its own thread too for cleaner structure
+send_thread = threading.Thread(target=send_messages, args=(client_socket, username_accepted))
+send_thread.start()
