@@ -1,27 +1,45 @@
+# client.py
 import socket
+import threading
+import os # We need the 'os' library to properly exit the program
 
-# --- Configuration ---
-# This MUST match the server's HOST and PORT exactly.
-HOST = '127.0.0.1'
-PORT = 9090
+# This function will run in a thread to continuously receive messages
+def receive_messages(client_socket):
+    while True:
+        try:
+            message = client_socket.recv(1024).decode('utf-8')
+            if message == "USER":
+                username = input("Please choose your username: ")
+                client_socket.send(username.encode('utf-8'))
+            elif message:
+                print(message)
+            else:
+                # Server has closed the connection
+                print("Server disconnected. Shutting down.")
+                os._exit(0)
+        except:
+            print("An error occurred. Disconnecting from server.")
+            os._exit(0)
 
-# 1. Create a client socket
+# This function now handles the /quit command
+def send_messages(client_socket):
+    while True:
+        message = input('') # Wait for the user to type something
+        if message.lower() == '/quit':
+            print("Disconnecting from server.")
+            client_socket.close()
+            os._exit(0) # Forcefully stops all threads and exits
+        client_socket.send(message.encode('utf-8'))
+
+# --- Main Client Logic ---
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-# 2. Connect to the server
 try:
-    client_socket.connect((HOST, PORT))
-    print(f"[*] Successfully connected to the server.")
-
-    # 3. Receive the message from the server
-    # 1024 is the buffer size (how much data to get at once).
-    # We must .decode() the bytes back into a string to read it.
-    message = client_socket.recv(1024).decode('utf-8')
-    print(f"Server says: {message}")
-
+    client_socket.connect(('127.0.0.1', 9090))
 except ConnectionRefusedError:
-    print("[!] Connection failed. Make sure the server is running first.")
+    print("[!] Connection failed. Is the server running?")
+    exit()
 
-finally:
-    # 4. Close the connection
-    client_socket.close()
+receive_thread = threading.Thread(target=receive_messages, args=(client_socket,))
+receive_thread.start()
+
+send_messages(client_socket)
