@@ -10,21 +10,17 @@ server_socket.bind((HOST, PORT))
 server_socket.listen()
 print(f"[*] Server is live and listening on {HOST}:{PORT}")
 
-# Lists to store the socket objects and usernames of connected clients
 clients = []
 usernames = []
 
-# This function sends a message to all connected clients except the sender
 def broadcast(message, _sender_socket):
     for client_socket in clients:
         if client_socket != _sender_socket:
             try:
                 client_socket.send(message)
             except:
-                # If sending fails, the client has likely disconnected
                 remove_client(client_socket)
 
-# This function removes a client when they disconnect
 def remove_client(client_socket):
     if client_socket in clients:
         index = clients.index(client_socket)
@@ -37,7 +33,6 @@ def remove_client(client_socket):
 # This function handles a single client's connection
 def handle_client(client_socket):
     try:
-        # Ask the client for their username
         client_socket.send("USER".encode('utf-8'))
         username = client_socket.recv(1024).decode('utf-8')
         usernames.append(username)
@@ -47,22 +42,43 @@ def handle_client(client_socket):
         broadcast(f"{username} has joined the chat!".encode('utf-8'), client_socket)
         client_socket.send("Connected to the server!".encode('utf-8'))
 
-        # Continuously listen for messages from this client
         while True:
-            message = client_socket.recv(1024)
-            if message:
-                broadcast(f"<{username}> {message.decode('utf-8')}".encode('utf-8'), client_socket)
+            message_str = client_socket.recv(1024).decode('utf-8')
+            if message_str:
+                # --- NEW WHISPER LOGIC ---
+                if message_str.startswith('/whisper'):
+                    try:
+                        # Format: /whisper <recipient> <message>
+                        parts = message_str.split(' ', 2)
+                        recipient_username = parts[1]
+                        private_message = parts[2]
+
+                        # Find the recipient's socket
+                        if recipient_username in usernames:
+                            recipient_index = usernames.index(recipient_username)
+                            recipient_socket = clients[recipient_index]
+                            
+                            # Send the private message
+                            final_message = f"(whisper from {username}): {private_message}".encode('utf-8')
+                            recipient_socket.send(final_message)
+                            
+                            # Send confirmation to the sender
+                            client_socket.send(f"You whispered to {recipient_username}: {private_message}".encode('utf-8'))
+                        else:
+                            client_socket.send(f"Error: User '{recipient_username}' not found.".encode('utf-8'))
+                    except IndexError:
+                        client_socket.send("Error: Invalid whisper format. Use /whisper <username> <message>".encode('utf-8'))
+                else:
+                    # It's a regular broadcast message
+                    broadcast(f"<{username}> {message_str}".encode('utf-8'), client_socket)
             else:
-                # An empty message means the client disconnected
                 remove_client(client_socket)
                 break
     except:
         remove_client(client_socket)
 
 # --- Main Server Loop ---
-# This loop continuously waits for new clients to connect
 while True:
     client_socket, address = server_socket.accept()
-    # Create a new thread for each client that connects
     thread = threading.Thread(target=handle_client, args=(client_socket,))
     thread.start()
